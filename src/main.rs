@@ -196,7 +196,7 @@ struct Measurement<'a> {
     indices: &'a str,
     exponent: usize,
     iteration: usize,
-    total: f64,
+    output: f64,
     seconds: f64,
 }
 
@@ -251,7 +251,7 @@ fn measure_files<T: Number, I: Copy>(
             indices: dir_indices,
             exponent,
             iteration,
-            total: total.into(),
+            output: total.into(),
             seconds: duration.as_secs_f64(),
         };
         println!("{}", serde_json::to_string(&measurement).unwrap());
