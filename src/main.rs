@@ -53,12 +53,6 @@ trait Progress {
     fn step(&mut self);
 }
 
-impl Progress for () {
-    fn new(_: usize) -> Self {}
-
-    fn step(&mut self) {}
-}
-
 fn random_floats<T: Number, P: Progress>(rng: &mut impl Rng, mut writer: impl Write, n: usize)
 where
     StandardNormal: Distribution<T>,
