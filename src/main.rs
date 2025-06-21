@@ -190,6 +190,16 @@ use std::time::Instant;
 
 use serde::Serialize;
 
+trait Reader: AsRef<[u8]> {
+    fn new(path: &Path) -> Self;
+}
+
+impl Reader for Vec<u8> {
+    fn new(path: &Path) -> Self {
+        fs::read(path).unwrap()
+    }
+}
+
 #[derive(Serialize)]
 struct Measurement<'a> {
     floats: &'a str,
@@ -229,7 +239,7 @@ unsafe fn reinterpret<T>(bytes: &[u8]) -> &[T] {
     values
 }
 
-fn measure_files<T: Number, I: Copy>(
+fn measure_files<R: Reader, T: Number, I: Copy>(
     dir_floats: &str,
     dir_indices: &str,
     exponent: usize,
@@ -238,10 +248,10 @@ fn measure_files<T: Number, I: Copy>(
     [T]: Index<I, Output = T>,
 {
     let name = format!("{exponent}.dat");
-    let bytes_floats = fs::read(Path::new(dir_floats).join(&name)).unwrap();
-    let bytes_indices = fs::read(Path::new(dir_indices).join(&name)).unwrap();
-    let floats = unsafe { reinterpret::<T>(&bytes_floats) };
-    let indices = unsafe { reinterpret::<I>(&bytes_indices) };
+    let bytes_floats = R::new(&Path::new(dir_floats).join(&name));
+    let bytes_indices = R::new(&Path::new(dir_indices).join(&name));
+    let floats = unsafe { reinterpret::<T>(bytes_floats.as_ref()) };
+    let indices = unsafe { reinterpret::<I>(bytes_indices.as_ref()) };
     for iteration in 0..repeat {
         let start = Instant::now();
         let total = sum(floats, indices);
@@ -258,28 +268,38 @@ fn measure_files<T: Number, I: Copy>(
     }
 }
 
-fn measure(exponents: RangeInclusive<usize>, options: Options, repeat: usize) {
+fn measure<R: Reader>(exponents: RangeInclusive<usize>, options: Options, repeat: usize) {
     for exponent in exponents {
         if options.f32 {
             if options.u32 {
-                measure_files::<f32, Index32>(FLOAT32, UNSHUFFLED32, exponent, repeat);
-                measure_files::<f32, Index32>(FLOAT32, SHUFFLED32, exponent, repeat);
+                measure_files::<R, f32, Index32>(FLOAT32, UNSHUFFLED32, exponent, repeat);
+                measure_files::<R, f32, Index32>(FLOAT32, SHUFFLED32, exponent, repeat);
             }
             if options.u64 {
-                measure_files::<f32, Index64>(FLOAT32, UNSHUFFLED64, exponent, repeat);
-                measure_files::<f32, Index64>(FLOAT32, SHUFFLED64, exponent, repeat);
+                measure_files::<R, f32, Index64>(FLOAT32, UNSHUFFLED64, exponent, repeat);
+                measure_files::<R, f32, Index64>(FLOAT32, SHUFFLED64, exponent, repeat);
             }
         }
         if options.f64 {
             if options.u32 {
-                measure_files::<f64, Index32>(FLOAT64, UNSHUFFLED32, exponent, repeat);
-                measure_files::<f64, Index32>(FLOAT64, SHUFFLED32, exponent, repeat);
+                measure_files::<R, f64, Index32>(FLOAT64, UNSHUFFLED32, exponent, repeat);
+                measure_files::<R, f64, Index32>(FLOAT64, SHUFFLED32, exponent, repeat);
             }
             if options.u64 {
-                measure_files::<f64, Index64>(FLOAT64, UNSHUFFLED64, exponent, repeat);
-                measure_files::<f64, Index64>(FLOAT64, SHUFFLED64, exponent, repeat);
+                measure_files::<R, f64, Index64>(FLOAT64, UNSHUFFLED64, exponent, repeat);
+                measure_files::<R, f64, Index64>(FLOAT64, SHUFFLED64, exponent, repeat);
             }
         }
+    }
+}
+
+// Memory mapping.
+
+use memmap2::Mmap;
+
+impl Reader for Mmap {
+    fn new(path: &Path) -> Self {
+        unsafe { Mmap::map(&fs::File::open(path).unwrap()) }.unwrap()
     }
 }
 
@@ -330,6 +350,10 @@ enum Action {
         #[arg(long, default_value_t = 100)]
         repeat: usize,
 
+        /// Memory-map the input files
+        #[arg(long)]
+        mmap: bool,
+
         /// Don't use single-precision floating-point data
         #[arg(long)]
         no_f32: bool,
@@ -376,6 +400,7 @@ fn main() {
             min,
             max,
             repeat,
+            mmap,
             no_f32,
             no_f64,
             no_u32,
@@ -387,7 +412,11 @@ fn main() {
                 u32: !no_u32,
                 u64: !no_u64,
             };
-            measure(min..=max, options, repeat);
+            if mmap {
+                measure::<Mmap>(min..=max, options, repeat);
+            } else {
+                measure::<Vec<u8>>(min..=max, options, repeat);
+            }
         }
     }
 }
