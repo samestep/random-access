@@ -303,6 +303,53 @@ impl Reader for Mmap {
     }
 }
 
+// Direct summation.
+
+use std::io::BufRead;
+
+fn sum_buffered<T: Number>(dir_floats: &str, exponent: usize, repeat: usize) {
+    let name = format!("{exponent}.dat");
+    for iteration in 0..repeat {
+        let mut reader =
+            io::BufReader::new(fs::File::open(Path::new(dir_floats).join(&name)).unwrap());
+        let start = Instant::now();
+        let mut total = T::zero();
+        loop {
+            let buffer = reader.fill_buf().unwrap();
+            if buffer.is_empty() {
+                break;
+            }
+            let floats = unsafe { reinterpret::<T>(buffer) };
+            for &float in floats {
+                total += float;
+            }
+            let bytes = buffer.len();
+            reader.consume(bytes);
+        }
+        let duration = start.elapsed();
+        let measurement = Measurement {
+            floats: dir_floats,
+            indices: "unshuffled64",
+            exponent,
+            iteration,
+            output: total.into(),
+            seconds: duration.as_secs_f64(),
+        };
+        println!("{}", serde_json::to_string(&measurement).unwrap());
+    }
+}
+
+fn measure_buffered(exponents: RangeInclusive<usize>, options: Options, repeat: usize) {
+    for exponent in exponents {
+        if options.f32 {
+            sum_buffered::<f32>(FLOAT32, exponent, repeat);
+        }
+        if options.f64 {
+            sum_buffered::<f64>(FLOAT64, exponent, repeat);
+        }
+    }
+}
+
 // Interface.
 
 use clap::{Parser, Subcommand};
@@ -370,6 +417,29 @@ enum Action {
         #[arg(long)]
         no_u64: bool,
     },
+
+    /// Sum directly without using indices
+    Sum {
+        /// Array lengths are powers of two with at least this exponent
+        #[arg(long, default_value_t = 0)]
+        min: usize,
+
+        /// Array lengths are powers of two with at most this exponent
+        #[arg(long, default_value_t = 24)]
+        max: usize,
+
+        /// Number of measurements to collect for each case
+        #[arg(long, default_value_t = 100)]
+        repeat: usize,
+
+        /// Don't use single-precision floating-point data
+        #[arg(long)]
+        no_f32: bool,
+
+        /// Don't use double-precision floating-point data
+        #[arg(long)]
+        no_f64: bool,
+    },
 }
 
 #[derive(Parser)]
@@ -417,6 +487,21 @@ fn main() {
             } else {
                 measure::<Vec<u8>>(min..=max, options, repeat);
             }
+        }
+        Action::Sum {
+            min,
+            max,
+            repeat,
+            no_f32,
+            no_f64,
+        } => {
+            let options = Options {
+                f32: !no_f32,
+                f64: !no_f64,
+                u32: false,
+                u64: false,
+            };
+            measure_buffered(min..=max, options, repeat);
         }
     }
 }
