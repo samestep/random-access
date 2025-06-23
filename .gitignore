@@ -1,8 +1,10 @@
 /.direnv/
 /.envrc
+/buffer.jsonl
 /float32/
 /float64/
-/measurements.jsonl
+/mmap.jsonl
+/ram.jsonl
 /shuffled32/
 /shuffled64/
 /target/
